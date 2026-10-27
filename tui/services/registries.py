@@ -55,6 +55,7 @@ from typing import NamedTuple
 
 import artifact_loader  # top-level module (pipeline/ sys.path root, D-19)
 import registry_loader  # top-level module (pipeline/ sys.path root, D-02/D-19)
+import task_overrides  # top-level module (pipeline/ sys.path root, quick-261027-fyt)
 
 # ===== Canonical model-card field constants (the casing twins resolved) =====
 
@@ -70,6 +71,21 @@ PRESENCE_UNKNOWN = "unknown"
 #: Column-level sentinel: n_audit.json itself is absent/unreadable —
 #: every row renders the documented empty-state copy (the 08-07 screen).
 PRESENCE_UNAVAILABLE = "unavailable"
+
+# ===== Availability vocabulary (quick-261027-fyt — the runtime overlay) =====
+#
+# THE LAYER SPLIT (the assumption-delta ruling, documented not
+# conflated): presence stays the 2-state committed contract above
+# (n_audit -> present/missing; ``presence_for`` and the definite-
+# presence pins are untouched by the overrides file, and
+# ``unavailable`` never enters n_audit or any committed artifact).
+# Availability is a RUNTIME overlay merged AFTER presence, sourced from
+# the user-owned task_overrides.json. The string below deliberately
+# spells the SAME operator word as the column-level
+# PRESENCE_UNAVAILABLE above, but only this layer produces it in the
+# merged view and it ALWAYS carries reason/since — so the layers are
+# distinguishable at every consumer without renaming either.
+AVAILABILITY_UNAVAILABLE = "unavailable"
 
 # ===== Locations (resolved from this module's own file, never CWD) =====
 
@@ -107,6 +123,31 @@ class Presence:
 
     status: str
     rows: tuple[int, int, int] | None
+
+
+@dataclass(frozen=True)
+class Availability:
+    """One dataset row's runtime availability — the overlay merged
+    AFTER presence (quick-261027-fyt; pure data, nothing renders here).
+
+    Attributes:
+        status (str): ``AVAILABILITY_UNAVAILABLE`` for a flagged task,
+            else the underlying Presence status passed through
+            verbatim.
+        rows (tuple[int, int, int] | None): None for every flagged task
+            (the overlay wins over ANY presence status, present
+            included); else the underlying Presence rows verbatim.
+        reason (str | None): the override's free-text reason — set ONLY
+            on the unavailable status (the layer-distinguishing
+            carrier); None on every passthrough.
+        since (str | None): the override's since value, same rule as
+            reason.
+    """
+
+    status: str
+    rows: tuple[int, int, int] | None
+    reason: "str | None"
+    since: "str | None"
 
 
 def _project_model_entry(key, card):
@@ -344,6 +385,57 @@ def presence_for(task_key, audit_tasks):
         status=PRESENCE_PRESENT,
         rows=(extracted[0], extracted[1], extracted[2]),
     )
+
+
+def unavailable_tasks():
+    """The task-unavailability overlay — the ONE services-surface read.
+
+    Delegates to the pipeline loader (the registry_loader mechanics:
+    screens and sibling services never import pipeline modules
+    directly); the screens' worker seams (the selection snapshot, the
+    wizard picker) and the run-config preview read through THIS
+    function, never a duplicated file read (one authority, many
+    consumers — the load_dnallm_compat precedent).
+
+    Returns:
+        task_overrides.TaskOverrides: the flagged mapping (task key ->
+        ``TaskOverrideEntry(reason, since)``) plus the degraded path of
+        a present-but-malformed file (None when healthy/absent — each
+        surface composes its own message; I18N-01).
+    """
+    return task_overrides.load_task_overrides()
+
+
+def availability_for(task_key, presence, overrides):
+    """Merge the availability overlay OVER one presence value (pure).
+
+    THE AFTER-merge (the layer split): a flagged key reads
+    ``AVAILABILITY_UNAVAILABLE`` with rows None — the overlay wins over
+    ANY presence status, present included — and always carries the
+    override's reason/since (the layer-distinguishing carrier). An
+    unflagged key (or empty overrides) passes the underlying Presence
+    through VERBATIM with reason/since None: presence_for itself never
+    sees the overrides file, so the committed 2-state presence contract
+    is untouched by construction.
+
+    Args:
+        task_key (str): the dataset registry key (the row's task).
+        presence (Presence): the committed presence value for the key.
+        overrides (Mapping[str, task_overrides.TaskOverrideEntry]): the
+            flagged mapping (``unavailable_tasks().unavailable``; an
+            empty mapping is the absent-file passthrough case).
+
+    Returns:
+        Availability: the merged runtime value (pure data).
+    """
+    entry = overrides.get(task_key) if overrides else None
+    if entry is None:
+        return Availability(
+            status=presence.status, rows=presence.rows,
+            reason=None, since=None)
+    return Availability(
+        status=AVAILABILITY_UNAVAILABLE, rows=None,
+        reason=entry.reason, since=entry.since)
 
 
 def _to_float(value, default=0.0):

@@ -82,6 +82,25 @@ Registry contract (D-10 single source):
     ``datasets_info.json`` entries with truthy ``Train``. The .txt
     registries no longer exist (retired by plan 03-02).
 
+Task overrides (quick-261027-fyt):
+    A user-owned ``task_overrides.json`` beside ``directories.json``
+    (same config root, resolved through the SAME directories_config
+    resolver) flags registry task keys temporarily unrunnable
+    (``{"tasks": {key: {"unavailable": true, "reason": ..., "since":
+    ...}}}``; the file is hand-authored and fully reversible — deleting
+    the entry restores the task everywhere on the next read).
+    ``enumerate_matrix`` drops flagged tasks from EVERY matrix it
+    builds — pure and silent (one authority for what any matrix
+    contains: the CLI, the TUI preview, and the gate recomputes all
+    inherit the same exclusion; warnings belong to ``main`` — the TUI
+    preview calls this per keystroke and must never toast). ``main``
+    warns once naming each requested-but-flagged task with its reason
+    and proceeds; when EVERY requested task is flagged it exits
+    fatally instead (the WR-07 zero-cell no-op class). A malformed
+    file degrades to zero overrides with one warning naming the path —
+    fail-open: an exclusion list must never block the benchmark (the
+    directories_config fail-loud policy guards the OPPOSITE hazard).
+
 Failure boundary:
     A cell is recorded ``failed`` when the executor raises a
     ``subprocess.SubprocessError`` or ``OSError`` — the failure modes of
@@ -335,6 +354,7 @@ from typing import NamedTuple
 
 import directories_config  # sibling module (the F4W-01 startup config, same stdlib-only purity)
 import registry_loader  # sibling module (pipeline/ on sys.path, the same import mechanics tests use for run_sweep itself)
+import task_overrides  # sibling module (the task_overrides.json overlay, quick-261027-fyt)
 
 PIPELINE_DIR = Path(__file__).resolve().parent
 RUN_FINETUNE = PIPELINE_DIR / "run_finetune.py"
@@ -816,6 +836,15 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
     seed dir). ``fractions=None`` (the default) enumerates the exact
     3-tuple cells of today (byte-identical default).
 
+    Under ``task_overrides.json`` (quick-261027-fyt) flagged tasks drop
+    from the ``tasks`` list ALWAYS — silently and purely, via the
+    tolerant reader (a malformed file never blocks enumeration; with no
+    file the enumeration is byte-identical to today). ONE authority for
+    what any matrix contains: the TUI preview and the gate recomputes
+    call this same function and must never toast per keystroke —
+    operator-visible warnings belong to ``main``
+    (``_warn_unavailable_tasks``).
+
     Args:
         models_filter (list[str] | None): restrict to these models_info.json
             keys (BASE names); None means all keys.
@@ -849,6 +878,12 @@ def enumerate_matrix(models_filter, tasks_filter, seeds, registry_dir,
     if tasks_filter:
         allowed_tasks = set(tasks_filter)
         tasks = [task for task in tasks if task in allowed_tasks]
+    # quick-261027-fyt: flagged tasks drop ALWAYS (silent + pure — the
+    # tolerant reader degrades a malformed file to zero overrides, so a
+    # bad file never blocks enumeration; unknown keys act nowhere).
+    unavailable = task_overrides.unavailable_tasks()
+    if unavailable:
+        tasks = [task for task in tasks if task not in unavailable]
 
     def cell_model(model):
         if peft != "none":
@@ -965,6 +1000,69 @@ def _validate_filters(models_filter, tasks_filter, registry_dir):
         )
     if problems:
         sys.exit(f"[Error] {'; '.join(problems)}")
+
+
+def _warn_unavailable_tasks(tasks_filter, registry_dir):
+    """Warn once per run over the task_overrides.json overlay; fatal
+    when EVERY requested task is flagged (quick-261027-fyt).
+
+    The requested set is the explicit ``--tasks`` list, or EVERY
+    trainable registry key when ``--tasks`` is omitted (the enumeration
+    that would run). A malformed overrides file prints one ``[Warning]``
+    naming the path and proceeds with ZERO overrides (fail-open: an
+    exclusion list must never block the benchmark — worst case a task
+    runs instead of skipping, recoverable). Each requested-but-flagged
+    task is named with its reason in ONE collect-all ``[Warning]``, and
+    the sweep proceeds exit 0; when the flagged set covers the WHOLE
+    requested set (nonempty), the driver would launch ZERO cells — the
+    WR-07 silently-empty-matrix no-op class — so it exits fatally
+    instead. Precedence: unknown/untrainable ``--tasks`` names error in
+    ``_validate_filters`` FIRST (they fire before this warning — an
+    unknown name is a typo, a flagged name is a known registry key).
+
+    Args:
+        tasks_filter (list[str] | None): the requested --tasks names
+            (None = every trainable registry key).
+        registry_dir (Path | str): directory holding the unified JSON
+            registries.
+
+    Raises:
+        SystemExit: every requested task is flagged (the collect-all
+        error names each task with its reason and the restore path).
+    """
+    overrides = task_overrides.load_task_overrides()
+    if overrides.degraded is not None:
+        print(
+            f"[Warning] task overrides file {overrides.degraded} is "
+            "unreadable or malformed — zero overrides applied (fix or "
+            "delete task_overrides.json)"
+        )
+        return
+    if not overrides.unavailable:
+        return
+    if tasks_filter:
+        requested = set(tasks_filter)
+    else:
+        datasets_info = registry_loader.load_datasets_registry(registry_dir)
+        requested = {
+            key for key, entry in datasets_info.items() if entry.get("Train")
+        }
+    hits = sorted(requested & set(overrides.unavailable))
+    if not hits:
+        return
+
+    def _named(key):
+        entry = overrides.unavailable[key]
+        return f"{key} ({entry.reason})" if entry.reason else key
+
+    listing = "; ".join(_named(key) for key in hits)
+    if set(hits) == requested:
+        sys.exit(
+            f"[Error] every requested task is flagged unavailable in "
+            f"task_overrides.json: {listing} — refusing to launch a "
+            "zero-cell sweep; delete the entries to restore the tasks"
+        )
+    print(f"[Warning] unavailable task(s) skipped: {listing}")
 
 
 def _validate_dataset_name_alignment(datasets_info):
@@ -2027,6 +2125,11 @@ def main():
     # enumerated (WR-07): an unknown name would otherwise intersect to an
     # empty matrix that writes a manifest and exits 0 "successfully".
     _validate_filters(models_filter, tasks_filter, registry_dir)
+    # quick-261027-fyt: the task_overrides.json overlay — warn/skip the
+    # flagged requested tasks AFTER the typo/untrainable refusals (an
+    # unknown name is a typo; a flagged name is a known registry key),
+    # fatally when every requested task is flagged (zero-cell no-op).
+    _warn_unavailable_tasks(tasks_filter, registry_dir)
     # WR-06 (phase-07 review): the registry-key == Dataset_name
     # coincidence the cell-dir/output-dir layout silently relies on,
     # asserted over the SAME overlay-merged registry view the matrix

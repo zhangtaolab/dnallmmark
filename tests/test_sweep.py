@@ -614,6 +614,202 @@ def test_cli_exits_nonzero_on_requested_task_without_train_split(
     )
 
 
+# ===== task_overrides.json — enumerate/warn/skip (quick-261027-fyt) =====
+#
+# The user-owned task-unavailability overlay: enumerate_matrix drops
+# flagged tasks from EVERY matrix it builds (pure, silent — one
+# authority for what any matrix contains, the TUI preview included),
+# while main() owns the operator-visible warning and the all-flagged
+# fatal (the WR-07 zero-cell no-op class). Every file-writing test
+# re-pins DNALLMMARK_TUI_CONFIG_DIR at its OWN tmp (the root conftest
+# pin discipline; a test-body setenv wins over the autouse pin).
+
+
+def _pin_task_overrides(tmp_path, monkeypatch, tasks, raw=None):
+    """Write a task_overrides.json into a fresh config root and pin it.
+
+    Returns the config root (also the malformed-file path carrier when
+    ``raw`` text is given instead of a tasks mapping)."""
+    import task_overrides as task_overrides_module
+
+    config_root = tmp_path / "tui-config-overrides"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    target = config_root / task_overrides_module.TASK_OVERRIDES_FILE_NAME
+    if raw is not None:
+        target.write_text(raw, encoding="utf-8")
+    else:
+        target.write_text(json.dumps({"tasks": tasks}), encoding="utf-8")
+    return target
+
+
+def test_enumerate_matrix_byte_identical_without_overrides_file(tmp_path):
+    """ABSENT PARITY: with no task_overrides.json anywhere on the
+    resolution chain, enumerate_matrix returns the exact frozen
+    pre-change cells (the conftest's empty config-root pin supplies the
+    absent-file case; every committed SVG golden and untouched test
+    rides this same identity)."""
+    registry_dir = make_registry(tmp_path)
+    assert run_sweep.enumerate_matrix(None, None, [42], registry_dir) == [
+        ("model-a", "task-x", 42), ("model-a", "task-z", 42),
+        ("model-b", "task-x", 42), ("model-b", "task-z", 42),
+        ("model-c", "task-x", 42), ("model-c", "task-z", 42),
+    ]
+
+
+def test_enumerate_matrix_skips_flagged_tasks_only(tmp_path, monkeypatch):
+    """A flagged task's cells vanish from the enumeration while every
+    other task's cells are unchanged — and a MODEL key in the file
+    blocks nothing (the file is task-scoped: the join is over task
+    keys only, so a model key in the file affects nothing)."""
+    registry_dir = make_registry(tmp_path)
+    _pin_task_overrides(tmp_path, monkeypatch, {
+        "task-x": {"unavailable": True, "reason": "10k-token OOM",
+                   "since": "2026-10-27"},
+        "model-b": {"unavailable": True, "reason": "model keys are "
+                    "task-ignored", "since": "2026-10-27"},
+    })
+    assert run_sweep.enumerate_matrix(None, None, [42], registry_dir) == [
+        ("model-a", "task-z", 42), ("model-b", "task-z", 42),
+        ("model-c", "task-z", 42),
+    ], "task-x cells vanish, model-b stays (task-scoped join)"
+
+
+def test_cli_warns_and_skips_partially_flagged_requested_tasks(
+        tmp_path, monkeypatch, capsys):
+    """--tasks naming one flagged + one clean task: ONE collect-all
+    [Warning] names the flagged key with its reason, then the sweep
+    PROCEEDS exit-0 over the remaining cells (never a silent shrink —
+    and never a block: the exclusion list must not stop the sweep)."""
+    registry_dir = make_registry(tmp_path)
+    _pin_task_overrides(tmp_path, monkeypatch, {
+        "task-x": {"unavailable": True, "reason": "native segfault",
+                   "since": "2026-10-27"},
+    })
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x,task-z",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    captured = capsys.readouterr().out
+    assert "[Warning]" in captured
+    assert "task-x" in captured and "native segfault" in captured, (
+        "the warning names the flagged key WITH its reason"
+    )
+    assert "task-z" not in captured.split("unavailable task")[1], (
+        "the clean requested task is never named as unavailable"
+    )
+    assert _manifest_cells(out_root) == [("model-a", "task-z", 42)], (
+        "the sweep proceeds over the clean cells, exit 0"
+    )
+
+
+def test_cli_exits_when_every_requested_task_is_flagged(
+        tmp_path, monkeypatch):
+    """ALL requested --tasks flagged -> SystemExit with the collect-all
+    error naming every task (the WR-07 silently-empty-matrix no-op
+    class: a driver that would launch zero cells must say so fatally),
+    before any output is written."""
+    registry_dir = make_registry(tmp_path)
+    _pin_task_overrides(tmp_path, monkeypatch, {
+        "task-x": {"unavailable": True, "reason": "r1", "since": "s"},
+        "task-z": {"unavailable": True, "reason": "r2", "since": "s"},
+    })
+    out_root = tmp_path / "sweep-out"
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--models", "model-a",
+            "--tasks", "task-x,task-z",
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(out_root),
+            "--registry-dir", str(registry_dir),
+        ])
+    message = str(excinfo.value)
+    assert "task-x" in message and "task-z" in message, (
+        "the fatal error names every all-flagged task"
+    )
+    assert not out_root.exists(), (
+        "an all-flagged request must abort before any output is written"
+    )
+
+
+def test_cli_warns_flagged_task_when_tasks_omitted(tmp_path, monkeypatch,
+                                                   capsys):
+    """--tasks omitted + a flagged trainable task: requested = every
+    trainable registry key, so the flagged one is named with its reason
+    and its cells stay absent from the enumeration."""
+    registry_dir = make_registry(tmp_path)
+    _pin_task_overrides(tmp_path, monkeypatch, {
+        "task-x": {"unavailable": True, "reason": "32 GB ceiling",
+                   "since": "2026-10-27"},
+    })
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    captured = capsys.readouterr().out
+    assert "[Warning]" in captured
+    assert "task-x" in captured and "32 GB ceiling" in captured
+    assert _manifest_cells(out_root) == [("model-a", "task-z", 42)]
+
+
+def test_cli_malformed_overrides_file_warns_zero_overrides_proceeds(
+        tmp_path, monkeypatch, capsys):
+    """A present-but-malformed file: ONE [Warning] naming the path +
+    ZERO overrides applied + the sweep proceeds over the FULL requested
+    matrix (fail-open: worst case a task runs instead of skipping —
+    recoverable; never the reverse)."""
+    registry_dir = make_registry(tmp_path)
+    target = _pin_task_overrides(tmp_path, monkeypatch, None, raw="{not json")
+    out_root = tmp_path / "sweep-out"
+    run_cli(monkeypatch, [
+        "--models", "model-a",
+        "--tasks", "task-x",
+        "--seeds", "42",
+        "--dry-run",
+        "--output-root", str(out_root),
+        "--registry-dir", str(registry_dir),
+    ])
+    captured = capsys.readouterr().out
+    assert captured.count("[Warning]") == 1, (
+        "exactly one warning for the malformed file"
+    )
+    assert str(target) in captured, "the warning names the file path"
+    assert _manifest_cells(out_root) == [("model-a", "task-x", 42)], (
+        "zero overrides: the flagged-in-intent task still enumerates"
+    )
+
+
+def test_untrainable_refusal_wins_over_flagged(tmp_path, monkeypatch):
+    """Precedence: a --tasks name that is BOTH untrainable (falsy
+    Train) and flagged hits _validate_filters' fatal first — the
+    untrainable error wins (it fires before the overrides warning)."""
+    registry_dir = make_registry(tmp_path)
+    _pin_task_overrides(tmp_path, monkeypatch, {
+        "task-y": {"unavailable": True, "reason": "r", "since": "s"},
+    })
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(monkeypatch, [
+            "--tasks", "task-y",
+            "--seeds", "42",
+            "--dry-run",
+            "--output-root", str(tmp_path / "out"),
+            "--registry-dir", str(registry_dir),
+        ])
+    assert "Train" in str(excinfo.value), (
+        "the untrainable refusal (falsy Train) is the error that fires"
+    )
+
+
 @pytest.mark.parametrize("flag,raw_value", [
     ("--models", ","),
     ("--models", ""),

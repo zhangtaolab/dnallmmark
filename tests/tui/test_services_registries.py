@@ -33,6 +33,7 @@ See also:
     ``tests/test_registry_loader.py`` — the overlay merge contract.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -47,6 +48,7 @@ from tui.services.registries import (
     PRESENCE_PRESENT,
     PRESENCE_UNAVAILABLE,
     PRESENCE_UNKNOWN,
+    Presence,
     load_dataset_entries,
     load_dnallm_compat,
     load_model_entries,
@@ -393,6 +395,141 @@ def test_load_dnallm_compat_wrong_shape_yields_empty_mapping(
         path.write_text(bad, encoding="utf-8")
         monkeypatch.setattr(registries_module, "DNALLM_COMPAT_PATH", path)
         assert load_dnallm_compat() == {}, bad
+
+
+# ===== The availability overlay (quick-261027-fyt — the layer split) =====
+#
+# Availability is a RUNTIME overlay merged AFTER presence: presence
+# stays the 2-state committed contract (n_audit -> present/missing,
+# never mutated by the overrides file), while unavailable is produced
+# ONLY by this layer and always carries reason/since — the layers are
+# documented and test-pinned, never conflated.
+
+import task_overrides as task_overrides_module  # conftest: pipeline/ root
+
+from tui.services.registries import (
+    AVAILABILITY_UNAVAILABLE,
+    Availability,
+    availability_for,
+    unavailable_tasks,
+)
+
+
+def _write_task_overrides(root, tasks):
+    """Write a task_overrides.json under a config root."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / task_overrides_module.TASK_OVERRIDES_FILE_NAME).write_text(
+        json.dumps({"tasks": tasks}), encoding="utf-8")
+    return root / task_overrides_module.TASK_OVERRIDES_FILE_NAME
+
+
+def test_unavailable_tasks_delegates_over_a_tmp_config_root(
+        tmp_path, monkeypatch):
+    """The services-surface read resolves the SAME file the pipeline
+    loader reads (the ONE loader, zero duplication): a
+    task_overrides.json in the re-pinned config root surfaces with its
+    reason/since and no degradation."""
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(tmp_path))
+    assert unavailable_tasks() == task_overrides_module.TaskOverrides(
+        unavailable={}, degraded=None)
+    _write_task_overrides(tmp_path, {
+        "T__flagged": {"unavailable": True, "reason": "why",
+                       "since": "2026-10-27"},
+    })
+    assert unavailable_tasks() == task_overrides_module.TaskOverrides(
+        unavailable={
+            "T__flagged": task_overrides_module.TaskOverrideEntry(
+                reason="why", since="2026-10-27"),
+        },
+        degraded=None,
+    )
+
+
+def test_availability_for_flagged_overrides_present_rows_none():
+    """Flagged + present -> unavailable with rows None and the
+    reason/since carried (the overlay wins over ANY presence status,
+    present included)."""
+    overrides = {"T": task_overrides_module.TaskOverrideEntry(
+        reason="segfault", since="2026-10-27")}
+    merged = availability_for(
+        "T", Presence(status=PRESENCE_PRESENT, rows=(1, 2, 3)), overrides)
+    assert merged == Availability(
+        status=AVAILABILITY_UNAVAILABLE, rows=None,
+        reason="segfault", since="2026-10-27")
+
+
+def test_availability_for_flagged_wins_over_missing_and_unknown():
+    """The overlay wins over EVERY presence status — missing and
+    unknown read as unavailable too, always with rows None."""
+    overrides = {"T": task_overrides_module.TaskOverrideEntry(
+        reason="r", since="s")}
+    for presence in (
+        Presence(status=PRESENCE_MISSING, rows=None),
+        Presence(status=PRESENCE_UNKNOWN, rows=None),
+        Presence(status=PRESENCE_UNAVAILABLE, rows=None),
+    ):
+        merged = availability_for("T", presence, overrides)
+        assert merged.status == AVAILABILITY_UNAVAILABLE
+        assert merged.rows is None
+        assert merged.reason == "r"
+        assert merged.since == "s"
+
+
+def test_availability_for_unflagged_passes_presence_through_verbatim():
+    """An unflagged key passes the underlying Presence through
+    VERBATIM (status and rows) with reason/since None — the overlay
+    never rewrites what it does not cover."""
+    overrides = {"OTHER": task_overrides_module.TaskOverrideEntry(
+        reason="r", since="s")}
+    for presence in (
+        Presence(status=PRESENCE_PRESENT, rows=(7, 8, 9)),
+        Presence(status=PRESENCE_MISSING, rows=None),
+        Presence(status=PRESENCE_UNKNOWN, rows=None),
+    ):
+        merged = availability_for("T", presence, overrides)
+        assert merged == Availability(
+            status=presence.status, rows=presence.rows,
+            reason=None, since=None)
+
+
+def test_availability_for_empty_overrides_passthrough_every_status():
+    """Empty overrides = passthrough for every status (the
+    byte-identity-when-absent contract at the merge seam)."""
+    for presence in (
+        Presence(status=PRESENCE_PRESENT, rows=(1, 2, 3)),
+        Presence(status=PRESENCE_MISSING, rows=None),
+        Presence(status=PRESENCE_UNKNOWN, rows=None),
+        Presence(status=PRESENCE_UNAVAILABLE, rows=None),
+    ):
+        merged = availability_for("T", presence, {})
+        assert merged == Availability(
+            status=presence.status, rows=presence.rows,
+            reason=None, since=None)
+
+
+def test_layer_split_presence_for_untouched_by_overrides(tmp_path,
+                                                         monkeypatch):
+    """THE LAYER-SPLIT PIN (the assumption-delta ruling): with
+    overrides PRESENT, presence_for(key, tasks) output is byte-identical
+    to the no-override call for every key — unavailability never enters
+    the committed 2-state presence contract (nor n_audit, nor any
+    committed artifact)."""
+    _write_task_overrides(tmp_path, {
+        "T__present": {"unavailable": True, "reason": "r", "since": "s"},
+    })
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(tmp_path))
+    tasks = _synthetic_audit_tasks()
+    for key in ("T__present", "T__missing", "registry-only-task", ""):
+        assert presence_for(key, tasks) == presence_for(key, tasks)
+    # the flagged key's PRESENCE stays present — the runtime overlay is
+    # a SEPARATE value, never a presence mutation
+    assert presence_for("T__present", tasks).status == PRESENCE_PRESENT
+    merged = availability_for(
+        "T__present", presence_for("T__present", tasks),
+        unavailable_tasks().unavailable,
+    )
+    assert merged.status == AVAILABILITY_UNAVAILABLE
+    assert presence_for("T__present", tasks).status == PRESENCE_PRESENT
 
 
 def test_service_source_carries_zero_chinese_and_no_rendered_copy():
