@@ -724,6 +724,7 @@ if __name__ == "__main__":
     target_model = args.target_model
     target_dataset = args.target_dataset
     batch_size = args.batch_size
+    protocol_batch_size = batch_size
     max_token_len = args.max_token_len
     remove_pt = args.remove_pt
     remove_checkpoints = args.remove_checkpoints
@@ -1377,19 +1378,19 @@ if __name__ == "__main__":
                 # WR-04 length-tier rounding: the resolved sequence length
                 # caps the configured batch size by the legacy tier table
                 # BEFORE any VRAM estimator runs — the estimators may
-                # reduce below this cap but never raise past it. When the
-                # global effective batch is pinned, the tier table must
-                # scale THAT protocol batch, not the auto-estimated optimum
-                # (which mutates `batch_size` at count==0 and would keep
-                # long-sequence batches 4x too large: 1668 tokens then
-                # stays at 16 and OOMs through every mem_ratio step).
+                # reduce below this cap but never raise past it. The
+                # auto-batch state is PER DATASET: reset to the CLI protocol
+                # batch before the tier table and estimator, otherwise a
+                # small batch chosen for an earlier longer dataset leaks
+                # into this one (e.g. L=2002 batch=3 -> L=514 tier cap 1).
+                batch_size = protocol_batch_size
                 tier_batch_base = batch_size
                 if effective_batch_size is not None:
                     tier_batch_base = min(tier_batch_base, effective_batch_size)
                 tier_batch_cap = determine_batch_size(max_length, tier_batch_base)
 
                 # Auto batch size adjustment based on model params and sequence length
-                if auto_batch_size and count == 0:
+                if auto_batch_size:
                     model_params = sum(p.numel() for p in model.parameters())
                     print(f"Model parameters: {model_params:,}")
                     batch_size = estimate_batch_size_by_model_params(
@@ -1409,7 +1410,9 @@ if __name__ == "__main__":
 
                 # Set finetune-specific configurations
                 configs["finetune"].metric_for_best_model = row["metric"]
-                if init_max_mem > 0 and max_length > init_token_len:
+                # Only the non-auto path uses the first-dataset memory
+                # calibration; auto mode re-estimates every dataset above.
+                if not auto_batch_size and init_max_mem > 0 and max_length > init_token_len:
                     bs_new = estimate_batch_size(
                         max_mem_measured=init_max_mem,
                         seq_len_measured=init_token_len,
@@ -1429,13 +1432,10 @@ if __name__ == "__main__":
                 # the tier cap for this sequence length.
                 bs_new = min(bs_new, tier_batch_cap)
                 # Protocol guarantee (global effective batch): the per-device
-                # batch may never exceed --effective_batch_size. The auto
-                # estimator runs only on the first dataset and mutates
-                # `batch_size` (e.g. 64 at short lengths); carrying that into
-                # later datasets would silently quadruple the effective batch
-                # (64 x grad_accum 1) even though the CLI target is 16. Cap
-                # here so every cell trains at the same effective batch and
-                # grad_accum compensates for longer sequences instead.
+                # batch may never exceed --effective_batch_size. The
+                # per-dataset estimator can return a large value for short
+                # sequences; cap it here so grad_accum compensates and the
+                # effective batch stays at the CLI target.
                 if effective_batch_size is not None:
                     bs_new = min(bs_new, effective_batch_size)
                 configs["finetune"].per_device_train_batch_size = bs_new
