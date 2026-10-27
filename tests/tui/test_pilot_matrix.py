@@ -87,10 +87,13 @@ _PRESENCE = {
 
 
 def _matrix_data(model_keys=_MODELS, task_keys=_TASKS,
-                 presence=None, audit_available=True):
+                 presence=None, audit_available=True,
+                 task_overrides=None):
     """A selection snapshot for the matrix (models x datasets). The
     compat fixture marks every model adapted so the models render in the
-    slot-2 DEFAULT pool (MLC-02 — the matrix is pushed from slot 2)."""
+    slot-2 DEFAULT pool (MLC-02 — the matrix is pushed from slot 2).
+    quick-261027-fyt: ``task_overrides`` feeds the unavailable-glyph
+    overlay (default {} = the byte-identical pre-change grid)."""
     return SelectionData(
         model_entries=tuple(
             {"key": key, "type": "MLM", "species": "plants",
@@ -105,6 +108,7 @@ def _matrix_data(model_keys=_MODELS, task_keys=_TASKS,
         presence=dict(presence if presence is not None else _PRESENCE),
         audit_available=audit_available,
         compat={key: {"dnllm_adapted": True} for key in model_keys},
+        task_overrides=dict(task_overrides) if task_overrides else {},
     )
 
 
@@ -315,6 +319,51 @@ async def test_unknown_presence_renders_the_dim_glyph():
         assert _cell(table.get_cell(
             "plant-dnamamba-6mer", "iDNA_ABF_datasets__5mC",
         )) == "◌"
+
+
+async def test_flagged_task_column_renders_the_unavailable_glyph():
+    """quick-261027-fyt: a flagged task's column renders the 暂不可用
+    glyph (the ⊘ prefix family, dim) in EVERY cell of that column
+    regardless of the underlying presence, while the neighboring
+    columns keep their exact presence glyphs (the overlay-first check;
+    the reason never reaches the matrix — constant copy only)."""
+    from tui.strings import SEL_PRESENCE_TASK_UNAVAILABLE
+
+    data = _matrix_data(task_overrides={
+        "GUE__emp_H3": {"reason": "32 GB ceiling", "since": "2026-10-27"},
+    })
+    app = _app(data)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_matrix(pilot, app)
+        table = app.screen.query_one(DataTable)
+        # the flagged column (underlying presence: MISSING) renders the
+        # overlay glyph in every row
+        for model_key in _MODELS:
+            assert _cell(table.get_cell(
+                model_key, "GUE__emp_H3")) == SEL_PRESENCE_TASK_UNAVAILABLE
+        # neighbors keep their presence glyphs verbatim
+        assert _cell(table.get_cell(
+            "plant-dnamamba-6mer", "GUE__prom_core")) == "✓"
+        assert _cell(table.get_cell(
+            "plant-dnamamba-6mer", _TASKS[3])) == "✗"
+        # NOTE: the glyph text is 10 cells in the pinned 8-cell column —
+        # the plan pins BOTH the copy and the unchanged column geometry,
+        # so the rendered cell clips (leading ⊘ + 暂 carry the meaning
+        # under NO_COLOR); the cell VALUE carries the full constant.
+
+
+async def test_zero_overrides_grid_renders_presence_glyphs_verbatim():
+    """Byte-identity when absent: with an empty task_overrides mapping
+    every column renders its exact presence glyph (the pre-change
+    grid)."""
+    app = _app(_matrix_data())
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_matrix(pilot, app)
+        table = app.screen.query_one(DataTable)
+        assert _cell(table.get_cell(
+            "plant-dnamamba-6mer", "GUE__emp_H3")) == "✗"
+        assert _cell(table.get_cell(
+            "plant-dnamamba-6mer", "GUE__prom_core")) == "✓"
 
 
 async def test_readout_tracks_the_cursor_column_full_task_key():

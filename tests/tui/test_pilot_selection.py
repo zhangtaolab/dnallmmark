@@ -747,6 +747,77 @@ async def test_preset_unknown_keys_warn_loudly_and_skip():
         ) in _toast_messages(app)
 
 
+async def test_preset_referencing_flagged_task_rides_the_loud_skip():
+    """quick-261027-fyt: a preset whose task list includes a task
+    flagged in task_overrides.json rides the EXISTING loud skip — the
+    notify names the key, the task never joins _marked_tasks (never a
+    silently-unusable mark), and the clean tasks still apply."""
+    from dataclasses import replace
+
+    data = replace(_default_data(), task_overrides={
+        _TASK_A: {"reason": "10k-token OOM at the 32 GB ceiling",
+                  "since": "2026-10-27"},
+    })
+    fake = FakeSelectionService(data=data, customs={
+        "flagged-preset": {"models": [_KEY_MODEL_B],
+                           "tasks": [_TASK_A, _TASK_B]},
+    })
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        await pilot.press("p")
+        await app.workers.wait_for_complete()  # the menu read is a worker
+        await pilot.pause()
+        for _ in range(3):  # tier-1, tier-2, all -> the custom preset
+            await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen.marked_tasks == {_TASK_B}, (
+            "the flagged task never joins the mark set; the clean one does"
+        )
+        assert screen.marked_models == {_KEY_MODEL_B}
+        assert SEL_PRESET_UNKNOWN_KEYS.format(
+            n=1, keys=_TASK_A,
+        ) in _toast_messages(app), (
+            "the loud skip names the flagged task key"
+        )
+
+
+async def test_model_key_in_overrides_never_blocks_a_model_mark():
+    """The overrides file is TASK-scoped at every join: a MODEL key in
+    the file blocks nothing — a preset naming that model applies it
+    with no warning (only the task call sites thread the flagged set)."""
+    from dataclasses import replace
+
+    data = replace(_default_data(), task_overrides={
+        _KEY_MODEL_A: {"reason": "model keys are task-ignored",
+                       "since": "2026-10-27"},
+    })
+    fake = FakeSelectionService(data=data, customs={
+        "model-preset": {"models": [_KEY_MODEL_A], "tasks": [_TASK_B]},
+    })
+    app = _app(fake)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_selection(pilot, app)
+        screen = app.screen
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        for _ in range(3):
+            await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen.marked_models == {_KEY_MODEL_A}, (
+            "a model key in the task-scoped overrides file blocks nothing"
+        )
+        assert screen.marked_tasks == {_TASK_B}
+        assert SEL_PRESET_UNKNOWN_KEYS.format(
+            n=1, keys=_KEY_MODEL_A) not in _toast_messages(app), (
+            "no loud-skip warning fires for the model key"
+        )
+
+
 async def test_custom_preset_applies_from_the_menu():
     """A saved custom preset restores both sets as saved."""
     fake = FakeSelectionService(customs={

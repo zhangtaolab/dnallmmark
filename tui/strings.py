@@ -491,6 +491,12 @@ SEL_PRESENCE_MISSING = _t("SEL_PRESENCE_MISSING", "✗ 缺失", "✗ missing")
 # state of the new live presence decision (SEL_MODEL_PRESENCE_* below);
 # datasets keep the n_audit drift meaning.
 SEL_PRESENCE_UNKNOWN = _t("SEL_PRESENCE_UNKNOWN", "◌ 未知", "◌ unknown")
+# quick-261027-fyt: the task-unavailability overlay cell (the RUNTIME
+# availability layer merged AFTER presence — never the column-level
+# PRESENCE_UNAVAILABLE n_audit sentinel; glyph-first, ⊘ prefix family,
+# dim render; reason/since never reach the matrix, constant copy only).
+SEL_PRESENCE_TASK_UNAVAILABLE = _t(
+    "SEL_PRESENCE_TASK_UNAVAILABLE", "⊘ 暂不可用", "⊘ unavailable")
 
 # Models-column presence cells (DCL-02, 261014-dcl): the live per-model
 # download state decided in tui/services/selection over the effective
@@ -671,6 +677,18 @@ SEL_DISABLED_MARK_WARNING = _t(
 # weight carry the meaning under NO_COLOR).
 SEL_CUSTOM_BADGE = _t("SEL_CUSTOM_BADGE", "◇", "◇")
 SEL_DISABLED_SUFFIX = _t("SEL_DISABLED_SUFFIX", "（已停用）", " (disabled)")
+# quick-261027-fyt: the wizard picker's flagged-task badge (the
+# SEL_DISABLED_SUFFIX position/grammar — dim, appended after the key)
+# and the space-refusal warning (the SEL_DISABLED_MARK_WARNING twin;
+# the copy names the restore path because reversibility must be
+# discoverable at the refusal point).
+SEL_TASK_UNAVAILABLE_BADGE = _t(
+    "SEL_TASK_UNAVAILABLE_BADGE", "（暂不可用）", " (unavailable)")
+SEL_TASK_UNAVAILABLE_MARK_WARNING = _t(
+    "SEL_TASK_UNAVAILABLE_MARK_WARNING",
+    "⚠ {key} 暂不可用 — {reason}；删除 task_overrides.json 中的条目即可恢复",
+    "⚠ {key} temporarily unavailable — {reason}; delete the entry in "
+    "task_overrides.json to restore")
 # Count-line segment (D-10) — appended (dim) iff at least one custom entry
 # is LANDED; counts cover both states (visible = counted; the sweep-visible
 # enabled count is derivable from the markers). Zero customs omits the
@@ -1403,12 +1421,29 @@ CFG_VARIANT_PROBE_HINT = _t(
     "CFG_VARIANT_PROBE_HINT", "⚠ probe 不可用: {models}（专用 loader, 冻结不生效）",
     "⚠ probe unavailable: {models} (dedicated loaders; freezing does "
     "not apply)")
+# quick-261027-fyt: the #cfg-hint-tasks pair — the flagged-task list
+# (count + "key (reason)" items) and the malformed-file degraded note
+# (fail-open with a VISIBLE warning on the TUI surface; the path is the
+# loader's degraded carrier, data not copy).
+CFG_TASK_UNAVAILABLE_HINT = _t(
+    "CFG_TASK_UNAVAILABLE_HINT", "⊘ {n} 个任务暂不可用: {items}",
+    "⊘ {n} task(s) temporarily unavailable: {items}")
+CFG_TASK_OVERRIDES_DEGRADED = _t(
+    "CFG_TASK_OVERRIDES_DEGRADED",
+    "⚠ task_overrides.json 无法读取（{path}）— 覆盖已忽略",
+    "⚠ task_overrides.json is unreadable ({path}) — overrides ignored")
 
 # Numbered-problem segments — the preview line, the [p] modal, and the
 # gate share the gauntlet collect-all shape.
 CFG_PROBE_INELIGIBLE_PROBLEM = _t(
     "CFG_PROBE_INELIGIBLE_PROBLEM", "{model}: probe 不可用（专用 loader）",
     "{model}: probe unavailable (dedicated loader)")
+# quick-261027-fyt: the stale-spec backstop problem — a hand-edited
+# spec still carrying a flagged task surfaces red in the preview and
+# BLOCKS the gate instead of silently shrinking the matrix.
+CFG_TASK_UNAVAILABLE_PROBLEM = _t(
+    "CFG_TASK_UNAVAILABLE_PROBLEM", "任务暂不可用: {task}（见 task_overrides.json）",
+    "task temporarily unavailable: {task} (see task_overrides.json)")
 # Gap-filler (plan-owned, the SEL_PRESENCE_UNKNOWN precedent): the
 # variant×PEFT composition refusal the 11-01 driver enforces and 11-02
 # validates — mirrored as a preview problem (cheap composition-time

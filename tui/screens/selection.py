@@ -205,6 +205,15 @@ class SelectionData:
     #: loader. The default pool filter and the compat column render from
     #: it; the queue's model channel resolution reads the same map.
     compat: dict[str, dict] = field(default_factory=dict)
+    #: The task-unavailability overlay (quick-261027-fyt, additive —
+    #: the default keeps every Phase 8/9/10 fake conforming unchanged):
+    #: task key -> ``{"reason": str, "since": str}`` for every task
+    #: flagged in the user-owned task_overrides.json, loaded through
+    #: ``registries.unavailable_tasks`` — the ONE loader. The matrix's
+    #: presence view glyphs flagged columns and the preset/template
+    #: loud skip read from it; the file is task-scoped (a model key in
+    #: it never appears here through the services read).
+    task_overrides: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -423,6 +432,15 @@ class SelectionBackend:
             # the ONE loader; an empty map is the degraded read — every
             # official key then renders the unadapted cell honestly)
             compat=registries_service.load_dnallm_compat(),
+            # quick-261027-fyt: the task-unavailability overlay — one
+            # more tolerant read beside the audit merge (the ONE
+            # loader; the matrix glyph + the preset/template loud skip
+            # read from this snapshot field).
+            task_overrides={
+                key: {"reason": entry.reason, "since": entry.since}
+                for key, entry in
+                registries_service.unavailable_tasks().unavailable.items()
+            },
         )
 
     # ----- presets (SEL-02, D-06: derived, never hardcoded) -----
@@ -2096,22 +2114,32 @@ class SelectionScreen(Screen):
             on_apply=self._apply_preset,
         ))
 
-    def _deliverable_keys(self, entries: "Sequence[dict]") -> frozenset[str]:
+    def _deliverable_keys(
+        self, entries: "Sequence[dict]",
+        unavailable: "frozenset[str] | None" = None,
+    ) -> frozenset[str]:
         """The registry keys a run can deliver — the loud-skip key set.
 
         Disabled customs stay visible in the table (the management read)
         but the loader excludes them, so they are NOT deliverable: a
         preset/template referencing one rides the Phase 8 unknown-key
         loud skip (warned, skipped — never a silently-unusable mark).
+        quick-261027-fyt: a task flagged in task_overrides.json is
+        equally undeliverable — the TASK call sites pass the flagged
+        keys so a preset/template referencing one rides the SAME loud
+        skip; the MODEL call sites pass nothing (the file is
+        task-scoped — a model key in it never blocks a model).
         """
         custom_status = self._data.custom_status if self._data else {}
 
         def _blocked(entry_key: str) -> bool:
             status = custom_status.get(entry_key)
-            return bool(
+            if bool(
                 status and status.get("custom")
                 and not status.get("enabled", True)
-            )
+            ):
+                return True
+            return bool(unavailable and entry_key in unavailable)
 
         return frozenset(
             entry["key"] for entry in entries
@@ -2132,7 +2160,10 @@ class SelectionScreen(Screen):
             if self._data else frozenset()
         )
         task_keys = (
-            self._deliverable_keys(self._data.dataset_entries)
+            self._deliverable_keys(
+                self._data.dataset_entries,
+                unavailable=frozenset(self._data.task_overrides),
+            )
             if self._data else frozenset()
         )
         unknown = [
@@ -2249,7 +2280,10 @@ class SelectionScreen(Screen):
             if self._data else frozenset()
         )
         task_keys = (
-            self._deliverable_keys(self._data.dataset_entries)
+            self._deliverable_keys(
+                self._data.dataset_entries,
+                unavailable=frozenset(self._data.task_overrides),
+            )
             if self._data else frozenset()
         )
         unknown = [

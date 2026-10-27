@@ -77,10 +77,15 @@ from tui.strings import (
     CFG_SAVE_DEFAULTS_TOAST,
     CFG_STATUS_LINE,
     CFG_SUBSET_OFF,
+    CFG_TASK_OVERRIDES_DEGRADED,
+    CFG_TASK_UNAVAILABLE_HINT,
+    CFG_TASK_UNAVAILABLE_PROBLEM,
     NAV_LABEL_SELECTION,
     SEL_DISABLED_MARK_WARNING,
     SEL_FILTER_COUNT,
     SEL_SWITCH_LABEL,
+    SEL_TASK_UNAVAILABLE_BADGE,
+    SEL_TASK_UNAVAILABLE_MARK_WARNING,
 )
 
 # The i18n grep lock (the test_pilot_env_check.py precedent): the new
@@ -749,6 +754,142 @@ async def test_marked_then_disabled_custom_leaves_spec_at_load():
             for spec in run_service.saved_specs), (
             "the sanitized spec is what persists"
         )
+
+
+# ===== the task-unavailability overlay surfaces (quick-261027-fyt) =====
+
+
+def _overrides_entries(**kwargs):
+    """The standard picker fixture + a task-1 unavailable flag."""
+    return PickerEntries(
+        model_entries=tuple(_FAKE_MODELS),
+        dataset_entries=tuple(_FAKE_DATASETS),
+        custom_status=dict(_FAKE_CUSTOM_STATUS),
+        **kwargs,
+    )
+
+
+async def test_flagged_task_row_renders_badge_and_space_warns_never_marks():
+    """A flagged dataset row STAYS VISIBLE with the （暂不可用） badge
+    after the key, and space on it WARNS naming the reason (the
+    restore path included) while the task never joins spec.tasks —
+    both asserted (the toast AND the spec)."""
+    entries = _overrides_entries(task_overrides={
+        "task-1": {"reason": "native segfault", "since": "2026-10-27"},
+    })
+    run_service = FakeRunConfigService(entries=entries)
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        await pilot.press("m")  # the datasets picker: task-1 is row 0
+        await pilot.pause()
+        screen = app.screen
+        picker = screen.query_one("#cfg-picker", SelectionList)
+        prompts = [str(option.prompt) for option in picker.options]
+        assert any(
+            "task-1" in prompt and SEL_TASK_UNAVAILABLE_BADGE in prompt
+            for prompt in prompts), (
+            f"the flagged row carries the badge after the key: {prompts}"
+        )
+        assert prompts[0].index(SEL_TASK_UNAVAILABLE_BADGE) > prompts[
+            0].index("task-1"), "the badge renders AFTER the key"
+        await pilot.press("space")
+        await pilot.pause()
+        warnings = [
+            message for message in _toast_messages(app)
+            if SEL_TASK_UNAVAILABLE_MARK_WARNING.format(
+                key="task-1", reason="native segfault") in message
+        ]
+        assert warnings, "the refusal warns through the toast"
+        assert all(spec.tasks == () for spec in run_service.saved_specs), (
+            "a flagged task must never join the spec"
+        )
+
+
+async def test_marked_then_flagged_task_leaves_spec_at_mount():
+    """The WR-07 marked-then-disabled twin: a task marked in a previous
+    session and flagged in the file since LEAVES spec.tasks at mount —
+    the render, the status line, the preview counts, and the gate
+    enumeration all agree (the XDG state self-heals on the next
+    preview-worker save)."""
+    entries = _overrides_entries(task_overrides={
+        "task-1": {"reason": "10k-token OOM", "since": "2026-10-27"},
+    })
+    run_service = FakeRunConfigService(
+        entries=entries,
+        spec=RunSpec(models=("model-a",), tasks=("task-1", "task-2")))
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        assert screen._spec.tasks == ("task-2",), (
+            "the marked-then-flagged task must leave the spec at load"
+        )
+        assert all(
+            "task-1" not in spec.tasks
+            for spec in run_service.saved_specs), (
+            "the sanitized spec is what persists"
+        )
+
+
+async def test_cfg_hint_tasks_renders_flagged_list_and_hides_when_none():
+    """The #cfg-hint-tasks Label renders the flagged list (count +
+    ``key (reason)`` pairs, dim) when any flag exists and is HIDDEN
+    with zero overrides (the byte-identity-when-absent contract on the
+    hint surface)."""
+    entries = _overrides_entries(task_overrides={
+        "task-1": {"reason": "native segfault", "since": "2026-10-27"},
+        "task-2": {"reason": "", "since": ""},
+    })
+    run_service = FakeRunConfigService(entries=entries)
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        hint = screen.query_one("#cfg-hint-tasks", Static)
+        assert hint.display
+        assert _plain(hint.content) == CFG_TASK_UNAVAILABLE_HINT.format(
+            n=2, items="task-1 (native segfault), task-2")
+    # zero overrides: hidden, byte-identical to the pre-change surface
+    app = _app()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        hint = screen.query_one("#cfg-hint-tasks", Static)
+        assert not hint.display
+
+
+async def test_degraded_overrides_file_renders_the_degraded_hint():
+    """A present-but-malformed file renders the degraded note (fail-open
+    with a VISIBLE warning on the TUI surface) naming the path."""
+    entries = PickerEntries(
+        model_entries=tuple(_FAKE_MODELS),
+        dataset_entries=tuple(_FAKE_DATASETS),
+        custom_status=dict(_FAKE_CUSTOM_STATUS),
+        task_overrides_degraded="/cfg/task_overrides.json",
+    )
+    run_service = FakeRunConfigService(entries=entries)
+    app = _app(run_service=run_service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_run_config(pilot, app)
+        screen = app.screen
+        hint = screen.query_one("#cfg-hint-tasks", Static)
+        assert hint.display
+        assert _plain(hint.content) == CFG_TASK_OVERRIDES_DEGRADED.format(
+            path="/cfg/task_overrides.json")
+
+
+async def test_problem_line_maps_task_unavailable_to_its_copy():
+    """The _problem_line task_unavailable branch: the machine code maps
+    to CFG_TASK_UNAVAILABLE_PROBLEM (the preview line, the [p] modal,
+    and the gate all render problems through this one mapping — the
+    existing numbered-problems Pilot tests pin the rendering pipeline
+    itself; this pins the NEW branch deterministically)."""
+    from tui.screens.run_config import _problem_line
+
+    assert _problem_line(
+        "task_unavailable", "task-1",
+    ) == CFG_TASK_UNAVAILABLE_PROBLEM.format(task="task-1")
 
 
 async def test_params_defaults_render():

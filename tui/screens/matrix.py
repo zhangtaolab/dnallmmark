@@ -102,7 +102,18 @@ def _row_label(model_key: str, marked: bool) -> Text:
 
 
 def _presence_glyph(data: "SelectionData", task_key: str) -> Text:
-    """One cell glyph from the 08-04 presence data — render only."""
+    """One cell glyph from the 08-04 presence data — render only.
+
+    quick-261027-fyt: a task flagged in task_overrides.json renders the
+    unavailable glyph (the ⊘ prefix family, dim) in EVERY cell of its
+    column regardless of the underlying presence — the runtime
+    availability overlay checked FIRST, over the committed presence
+    view. Constant copy only: the reason never reaches the matrix (the
+    wizard hint + refusal toast carry it), so nothing override-derived
+    renders here (T-261027-01).
+    """
+    if task_key in data.task_overrides:
+        return Text(S.SEL_PRESENCE_TASK_UNAVAILABLE, style=_STYLE_DIM)
     presence = data.presence.get(task_key)
     if presence is not None and presence.status == PRESENCE_PRESENT:
         return Text("✓", style=_STYLE_PASS)

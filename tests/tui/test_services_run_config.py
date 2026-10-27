@@ -373,6 +373,101 @@ def test_validate_composition_refuses_filesystem_root_output_root():
     )
 
 
+# ===== the task_unavailable problem (quick-261027-fyt) =====
+
+
+def test_validate_composition_third_param_default_skips_the_check():
+    """The optional third param defaults to None = the check is SKIPPED
+    — every existing caller and test stays byte-identical (a flagged
+    task never raises the problem unless the caller passes the
+    mapping)."""
+    spec = run_config.RunSpec(
+        models=("m",), tasks=("GUE__emp_H3",),
+    )
+    assert run_config.validate_composition(spec, FIXTURE_PROBE_INELIGIBLE) == ()
+    assert run_config.validate_composition(
+        spec, FIXTURE_PROBE_INELIGIBLE, None) == ()
+    assert run_config.validate_composition(
+        spec, FIXTURE_PROBE_INELIGIBLE, frozenset()) == ()
+
+
+def test_validate_composition_flagged_task_one_problem_per_task():
+    """A flagged-task mapping + a spec selecting one: exactly ONE
+    (task_unavailable, task) problem per flagged selected task, in
+    selection order (collect-all, the probe_ineligible shape) — the
+    stale-spec backstop that surfaces a hand-edited spec red in the
+    preview instead of silently shrinking the matrix."""
+    spec = run_config.RunSpec(
+        models=("m",),
+        tasks=("iDNA_ABF_datasets__5mC", "GUE__emp_H3"),
+    )
+    problems = run_config.validate_composition(
+        spec, FIXTURE_PROBE_INELIGIBLE,
+        frozenset({"GUE__emp_H3"}),
+    )
+    assert problems == (("task_unavailable", "GUE__emp_H3"),)
+    both = run_config.validate_composition(
+        run_config.RunSpec(
+            models=("m",), tasks=("GUE__emp_H3", "GUE__virus_species_40")),
+        FIXTURE_PROBE_INELIGIBLE,
+        frozenset({"GUE__emp_H3", "GUE__virus_species_40"}),
+    )
+    assert both == (
+        ("task_unavailable", "GUE__emp_H3"),
+        ("task_unavailable", "GUE__virus_species_40"),
+    )
+
+
+def test_preview_over_flagged_task_reports_problem_and_excludes_cells(
+        tmp_path, monkeypatch):
+    """preview() threads the registries-surface overrides read into
+    validate_composition AND its cells derive through the same
+    enumerate_matrix drop: a spec carrying a flagged task reports the
+    task_unavailable problem while its cells_count EXCLUDES the task
+    (the belt-and-braces stale-spec backstop; the read rides the
+    preview worker thread)."""
+    import task_overrides as task_overrides_module
+
+    config_root = tmp_path / "tui-config"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    (config_root / task_overrides_module.TASK_OVERRIDES_FILE_NAME
+     ).write_text(json.dumps({"tasks": {
+         "GUE__emp_H3": {"unavailable": True, "reason": "32 GB ceiling",
+                         "since": "2026-10-27"},
+     }}), encoding="utf-8")
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",),
+        tasks=("GUE__emp_H3", "iDNA_ABF_datasets__5mC"),
+        seeds=(42,),
+    )
+    result = run_config.preview(spec)
+    assert result.problems == (("task_unavailable", "GUE__emp_H3"),)
+    assert result.cells_count == 1, (
+        "the flagged task's cells vanish from the same-source preview"
+    )
+    assert {cell[1] for cell in result.cells} == {
+        "iDNA_ABF_datasets__5mC"}
+
+
+def test_preview_without_overrides_file_byte_identical_problems(
+        tmp_path, monkeypatch):
+    """Absent parity at the preview seam: with an empty config root the
+    preview's problems stay exactly the pre-change value (the conftest
+    pin supplies the same case for the whole suite)."""
+    config_root = tmp_path / "tui-config-empty"
+    config_root.mkdir()
+    monkeypatch.setenv("DNALLMMARK_TUI_CONFIG_DIR", str(config_root))
+    spec = run_config.RunSpec(
+        models=("plant-dnabert-6mer",),
+        tasks=("GUE__emp_H3", "iDNA_ABF_datasets__5mC"),
+        seeds=(42,),
+    )
+    result = run_config.preview(spec)
+    assert result.problems == ()
+    assert result.cells_count == 2
+
+
 def test_phrase_matches_never_matches_an_empty_expected_phrase():
     """WR-07: the typed gate FAILS CLOSED on a degenerate phrase — an
     output root resolving to the filesystem root (expected_phrase "")

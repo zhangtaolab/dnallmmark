@@ -204,11 +204,22 @@ class PickerEntries:
         custom_status: key -> ``{"custom": bool, "enabled": bool}`` for
             every landed custom entry (official keys absent — the badge,
             never position, marks customs).
+        task_overrides: task key -> ``{"reason": str, "since": str}``
+            for every task flagged unavailable in the user-owned
+            task_overrides.json (quick-261027-fyt; additive — the
+            default keeps every existing fake conforming unchanged).
+            The file is task-scoped: model keys never appear here
+            through the services read.
+        task_overrides_degraded: the PATH of a present-but-malformed
+            overrides file (the fail-open carrier the hint Label
+            renders; None when healthy or absent).
     """
 
     model_entries: tuple[dict, ...] = ()
     dataset_entries: tuple[dict, ...] = ()
     custom_status: dict[str, dict] = field(default_factory=dict)
+    task_overrides: dict[str, dict] = field(default_factory=dict)
+    task_overrides_degraded: "str | None" = None
 
 
 class RunConfigServiceProtocol(Protocol):
@@ -304,10 +315,19 @@ class RunConfigBackend:
                     # the disabled customs the overlay loader hides —
                     # appended so the picker renders every landed entry
                     entries.append({"key": key, "card": entry})
+        # quick-261027-fyt: the ONE overrides read (the services seam —
+        # screens never import pipeline directly); the mapping feeds
+        # the badge/refusal/sanitize, the degraded path the hint.
+        overrides = registries_service.unavailable_tasks()
         return PickerEntries(
             model_entries=tuple(model_entries),
             dataset_entries=tuple(dataset_entries),
             custom_status=custom_status,
+            task_overrides={
+                key: {"reason": entry.reason, "since": entry.since}
+                for key, entry in overrides.unavailable.items()
+            },
+            task_overrides_degraded=overrides.degraded,
         )
 
     def load_state(self) -> RunSpec:
@@ -499,6 +519,11 @@ def _problem_line(code: str, detail: object) -> str:
         return S.CFG_CURVE_INVALID_PROBLEM.format(value=detail)
     if code == "probe_ineligible":
         return S.CFG_PROBE_INELIGIBLE_PROBLEM.format(model=detail)
+    # quick-261027-fyt: the stale-spec backstop — a selected task
+    # flagged in the overrides file renders its copy (the preview line
+    # and the [p] modal both route through this mapping).
+    if code == "task_unavailable":
+        return S.CFG_TASK_UNAVAILABLE_PROBLEM.format(task=detail)
     if code == "variant_peft":
         return S.CFG_COMPOSITION_PROBLEM
     if code == "output_root_invalid":
@@ -1477,6 +1502,10 @@ class RunConfigScreen(Screen):
                             classes="cfg-hint")
                 yield Label("", id="cfg-hint-variant-probe",
                             classes="cfg-hint")
+                # quick-261027-fyt: the task-unavailability hint (the
+                # flagged list, or the degraded note) — the same cfg-hint
+                # dim row, hidden with zero overrides.
+                yield Label("", id="cfg-hint-tasks", classes="cfg-hint")
                 with Horizontal(classes="cfg-param-row"):
                     yield Label(S.CFG_FIELD_CURVE, id="cfg-label-curve",
                                 classes="cfg-param-label")
@@ -1693,6 +1722,7 @@ class RunConfigScreen(Screen):
         self._spec = message.spec
         self._entries = message.entries
         self._sanitize_disabled_custom_marks()
+        self._sanitize_unavailable_task_marks()
         self._subset_on = message.spec.subset_file is not None
         subset_input = self.query_one("#cfg-input-subset", Input)
         subset_input.value = (message.spec.subset_file
@@ -1792,6 +1822,30 @@ class RunConfigScreen(Screen):
             task for task in self._spec.tasks if task not in disabled)
         if (models, tasks) != (self._spec.models, self._spec.tasks):
             self._spec = replace(self._spec, models=models, tasks=tasks)
+
+    def _sanitize_unavailable_task_marks(self) -> None:
+        """quick-261027-fyt: the WR-07 marked-then-disabled twin — drop
+        flagged tasks from the loaded spec at mount.
+
+        A task marked in a previous session and flagged in
+        task_overrides.json since would render UNMARKED (the badge +
+        mark suppression) while the status line, the preview counts,
+        and the gate enumeration still carried it — and both mark paths
+        refuse the flagged row, so it could never be unmarked from the
+        UI. Sanitizing here makes the spec agree with the render; the
+        first preview-worker save persists the sanitized spec (the XDG
+        state self-heals), and deleting the file entry restores the
+        task everywhere on the next read (the file is the only state).
+        The belt-and-braces backstop stays armed:
+        ``validate_composition``'s task_unavailable problem still
+        surfaces a hand-edited stale spec red in the preview."""
+        flagged = frozenset(self._entries.task_overrides)
+        if not flagged:
+            return
+        tasks = tuple(
+            task for task in self._spec.tasks if task not in flagged)
+        if tasks != self._spec.tasks:
+            self._spec = replace(self._spec, tasks=tasks)
 
     # ===== the preview worker (save + preview + advisories, WR-02) =====
 
@@ -1906,18 +1960,33 @@ class RunConfigScreen(Screen):
             is_disabled = bool(
                 status and status.get("custom")
                 and not status.get("enabled", True))
+            # quick-261027-fyt: a flagged TASK joins the disabled row
+            # list (the existing PickerList.action_select chokepoint
+            # refuses keyboard AND mouse marks with zero widget change)
+            # and never renders a checkmark; the file is task-scoped so
+            # the models kind never flags.
+            is_unavailable = (kind == "datasets"
+                              and key in self._entries.task_overrides)
             segments: list[Text] = []
             if kind == "models" and is_custom:
                 segments.append(Text(
                     f"{S.SEL_CUSTOM_BADGE} ", style="dim"))
             segments.append(Text(key))
+            if is_unavailable:
+                # literal Text construction (NEVER from_markup): the
+                # constant's copy only — free text never renders here
+                # (T-261027-01).
+                segments.append(Text(
+                    S.SEL_TASK_UNAVAILABLE_BADGE, style="dim"))
             if is_disabled:
                 segments.append(Text(S.SEL_DISABLED_SUFFIX, style="dim"))
             prompts.append(_truncate_text(
                 Text.assemble(*segments), budget))
             keys.append(key)
-            marked.append(key in marked_set and not is_disabled)
-            disabled.append(is_disabled)
+            marked.append(
+                key in marked_set and not is_disabled
+                and not is_unavailable)
+            disabled.append(is_disabled or is_unavailable)
         picker.set_rows(keys, prompts, marked, disabled,
                         anchor_key=anchor_key)
         self._render_counts()
@@ -2055,6 +2124,34 @@ class RunConfigScreen(Screen):
             probe.display = True
         else:
             probe.display = False
+        # quick-261027-fyt: the task-unavailability hint — the flagged
+        # list (count + "key (reason)" pairs) or, when the overrides
+        # file was malformed, the degraded note (fail-open with a
+        # VISIBLE warning). Reads self._entries (no signature change);
+        # literal Text construction so the free-text reason never
+        # parses as rich markup (T-261027-01 — Static.update parses
+        # str content).
+        tasks_hint = self.query_one("#cfg-hint-tasks", Label)
+        overrides = self._entries.task_overrides
+        degraded_path = self._entries.task_overrides_degraded
+        if overrides:
+            items = ", ".join(
+                f"{key} ({entry.get('reason', '')})"
+                if entry.get("reason") else str(key)
+                for key, entry in sorted(overrides.items())
+            )
+            tasks_hint.update(Text(
+                S.CFG_TASK_UNAVAILABLE_HINT.format(
+                    n=len(overrides), items=items),
+                style=_STYLE_DIM))
+            tasks_hint.display = True
+        elif degraded_path:
+            tasks_hint.update(Text(
+                S.CFG_TASK_OVERRIDES_DEGRADED.format(path=degraded_path),
+                style=_STYLE_DIM))
+            tasks_hint.display = True
+        else:
+            tasks_hint.display = False
 
     def _render_subset_row(self) -> None:
         """The off(default)/on(path) value copy pair (both shapes live
@@ -2141,12 +2238,33 @@ class RunConfigScreen(Screen):
             self._apply_spec_change(tasks=tuple(marks),
                                     picker_anchor=key)
 
+    def _warn_refused_mark(self, key: str) -> None:
+        """The refused-mark warning, branched on WHY the row refuses.
+
+        quick-261027-fyt: a task flagged in task_overrides.json warns
+        with the unavailable copy naming the reason AND the restore
+        path (reversibility discoverable at the refusal point); every
+        other refused row (the disabled custom) keeps the inherited
+        copy. ``markup=False``: the reason is user free text and rich
+        markup must stay unparsed (T-261027-01 — the notify default is
+        markup=True).
+        """
+        override = self._entries.task_overrides.get(key)
+        if override is not None:
+            reason = str(override.get("reason", ""))
+            self.app.notify(
+                S.SEL_TASK_UNAVAILABLE_MARK_WARNING.format(
+                    key=key, reason=reason),
+                severity="warning", markup=False)
+            return
+        self.app.notify(
+            S.SEL_DISABLED_MARK_WARNING.format(key=key),
+            severity="warning")
+
     def on_disabled_mark_requested(
             self, message: DisabledMarkRequested) -> None:
-        """A disabled custom can never mark — the inherited warning."""
-        self.app.notify(
-            S.SEL_DISABLED_MARK_WARNING.format(key=message.key),
-            severity="warning")
+        """A refused row can never mark — the branched warning."""
+        self._warn_refused_mark(message.key)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """The filter drives the list live; every other Input is a
@@ -2189,9 +2307,7 @@ class RunConfigScreen(Screen):
         if key is None:
             return
         if picker.disabled_at(index):
-            self.app.notify(
-                S.SEL_DISABLED_MARK_WARNING.format(key=key),
-                severity="warning")
+            self._warn_refused_mark(key)
             return
         entries, kind = self._current_entries()
         if key not in {str(entry["key"]) for entry in entries}:

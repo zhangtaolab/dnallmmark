@@ -115,6 +115,7 @@ from pathlib import Path
 import directories_config  # top-level module (pipeline/ sys.path root, the F4W startup config — stdlib-only, import-purity holds)
 import run_sweep  # top-level module (pipeline/ sys.path root, D-05 same-source)
 
+from tui.services import registries as registries_service
 from tui.services import settings
 
 # ===== Locations + pinned constants =====
@@ -193,6 +194,12 @@ PROBLEM_WORKERS_EXCEED_GPUS = "workers_exceeds_gpus"
 #: generic code+detail fallback exactly like epochs/ebs/batch_size (no
 #: per-field copy mapping, by design).
 PROBLEM_ADVANCED_INVALID = "advanced_invalid"
+#: quick-261027-fyt: a selected task flagged unavailable in the
+#: user-owned task_overrides.json — the belt-and-braces stale-spec
+#: backstop (the wizard's mount-time sanitize + mark refusal keep the
+#: spec clean; THIS surfaces a hand-edited stale spec red in the
+#: preview and blocks the gate). The detail names the task key.
+PROBLEM_TASK_UNAVAILABLE = "task_unavailable"
 
 #: The screen's field-dict keys (the run_sweep flag vocabulary; the
 #: params pane fields carry these names).
@@ -616,7 +623,7 @@ def parse_params(raw):
 # =====================================================================
 
 
-def validate_composition(spec, probe_ineligible):
+def validate_composition(spec, probe_ineligible, unavailable_tasks=None):
     """Validate a spec's composition — collect-all machine problems.
 
     Mirrors the sweep driver's own start-time refusals (11-01) as
@@ -630,6 +637,11 @@ def validate_composition(spec, probe_ineligible):
     - ``("probe_ineligible", model)`` — ONE per selected model — when
       variant is ``probe`` and the model is in the frozen
       probe-ineligible list;
+    - ``("task_unavailable", task)`` — ONE per selected task — when
+      the task is flagged in the task_overrides.json overlay
+      (quick-261027-fyt; only when the caller passes the flagged set —
+      ``None`` (the default) SKIPS the check so every existing caller
+      and test stays byte-identical);
     - ``("output_root_invalid", output_root)`` — WR-07 (phase-11
       review) — when the resolved output root is the filesystem root
       (empty basename): the E2' expected phrase would be the empty
@@ -641,6 +653,10 @@ def validate_composition(spec, probe_ineligible):
         probe_ineligible (frozenset[str]): the frozen probe-ineligible
             names (``probe_ineligible()`` reads them from the real
             pipeline source).
+        unavailable_tasks (frozenset[str] | None): the flagged task
+            keys from the task_overrides.json overlay (the
+            registries-surface read); None = the check is skipped
+            (the optional-additive third param).
 
     Returns:
         tuple[tuple[str, object], ...]: the collect-all problems
@@ -658,6 +674,10 @@ def validate_composition(spec, probe_ineligible):
         for model in spec.models:
             if model in probe_ineligible:
                 problems.append((PROBLEM_PROBE_INELIGIBLE, model))
+    if unavailable_tasks:
+        for task in spec.tasks:
+            if task in unavailable_tasks:
+                problems.append((PROBLEM_TASK_UNAVAILABLE, task))
     if Path(spec.output_root).resolve().name == "":
         problems.append((PROBLEM_OUTPUT_ROOT_INVALID, spec.output_root))
     return tuple(problems)
@@ -1237,6 +1257,12 @@ def preview(spec, registry_dir=None):
             fractions=list(spec.curve_fractions) or None,
             config_variant=spec.config_variant,
         ))
+    # quick-261027-fyt: the overrides read rides the SAME worker thread
+    # this preview already runs on (consistent with the registry reads
+    # enumerate does); the flagged set feeds the stale-spec backstop —
+    # the enumeration above already excludes flagged tasks through the
+    # same-source enumerate_matrix drop.
+    unavailable = registries_service.unavailable_tasks().unavailable
     return PreviewResult(
         models_count=len({cell[0] for cell in cells}),
         tasks_count=len({cell[1] for cell in cells}),
@@ -1245,7 +1271,9 @@ def preview(spec, registry_dir=None):
             len(spec.curve_fractions) if spec.curve_fractions else None),
         cells_count=len(cells),
         cells=cells,
-        problems=validate_composition(spec, probe_ineligible()),
+        problems=validate_composition(
+            spec, probe_ineligible(),
+            frozenset(unavailable) if unavailable else None),
     )
 
 

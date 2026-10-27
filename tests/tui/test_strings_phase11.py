@@ -106,6 +106,13 @@ EXPECTED_CFG_CONSTANTS = (
     "CFG_ADV_FIELD_LR_SCHEDULER_TYPE",
     "CFG_ADV_FIELD_LR_SCHEDULER_TYPE_SHORT",
     "CFG_ADV_FIELD_SAVE_STRATEGY",
+    # quick-261027-fyt (task-level temporary unavailability): the
+    # #cfg-hint-tasks flagged-list hint, the malformed-file degraded
+    # note, and the task_unavailable preview problem (the SEL_ badge/
+    # warning/glyph twins live in the SEL_ block with no complete
+    # inventory tuple — this file's CFG_/LNC_/MON_ lock only).
+    "CFG_TASK_UNAVAILABLE_HINT", "CFG_TASK_OVERRIDES_DEGRADED",
+    "CFG_TASK_UNAVAILABLE_PROBLEM",
 )
 
 #: The complete expected LNC_ inventory (launch-confirmation modal +
