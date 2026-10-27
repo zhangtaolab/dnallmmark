@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-10-27T12:13:50Z",
+  "context": "operational-watch",
+  "branch": "autorun",
+  "head": "8c32582",
+  "milestone": "v1.3",
+  "phase_status": {"13-18": "executed (verification stale-by-drift, milestone audit pending)", "19": "executed + verified + uat-complete"},
+  "quick_tasks_this_session": ["261022-pa6", "261022-tah", "261023-abu", "261027-fyt"],
+  "live_processes": {
+    "fungi_rescue_lane_3": {
+      "launched": "2026-10-27T01:10Z",
+      "argv": "run_sweep_shard.py --mode dispatch --rerun-failed --output-root pipeline/finetuned-fhs-full --workers 2 --gpus 0,1",
+      "env": ["PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True", "HF_HUB_OFFLINE=1", "DNALLMMARK_DATALOADER_WORKERS=12"],
+      "scope": "GUE__fungi_species_20 seeds 42/43/44 (the last 3 failed claims)",
+      "matrix": "90/93 done; 93/93 iff this lane completes",
+      "logs": ["pipeline/finetuned-fhs-full-dispatch-w0-20261027_091001.log", "pipeline/finetuned-fhs-full-dispatch-w1-20261027_091001.log"]
+    }
+  },
+  "next_actions": [
+    "verify rerun outcome: find pipeline/finetuned-fhs-full -name final_metrics.json | wc -l (93 => finalize REPORT + evidence commit; else apply task_overrides.json for GUE__fungi_species_20)",
+    "/gsd-complete-milestone",
+    "adjudicate WINDOWS 9 open rows at close"
+  ]
+}
